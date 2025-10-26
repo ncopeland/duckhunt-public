@@ -1,5 +1,16 @@
 # Changelog
 
+### v1.0_build94
+- **Major Refactor**: Complete removal of JSON backend support
+  - Removed all JSON backend else blocks throughout codebase
+  - Removed `save_player_data()` calls (129 lines removed)
+  - Removed JSON backend logic from `!topduck`, `!duckstats`, duck detector, and clear commands
+  - Bot is now SQL-only: cleaner, simpler, more maintainable
+- **Enhancement**: Updated default config generation
+  - Added SQL backend settings to default config template
+  - Added missing `shop_duck_call = 15` configuration
+  - Default config now matches current SQL-only setup
+
 ### v1.0_build93
 - **Enhancement**: !999 command now sends private notice only
   - Hidden feature now truly hidden from channel

@@ -422,7 +422,7 @@ class DuckHuntBot:
         self.authenticated_users = set()
         self.active_ducks = {}  # Per-channel duck lists: {channel: [ {'spawn_time': time, 'golden': bool, 'health': int}, ... ]}
         self.channel_last_duck_time = {}  # {channel: timestamp} - tracks when last duck was killed in each channel
-        self.version = "1.0_build93"
+        self.version = "1.0_build94"
         self.ducks_lock = asyncio.Lock()
         self.should_restart = False
         
@@ -565,6 +565,16 @@ class DuckHuntBot:
         default_config = """[DEFAULT]
 # DuckHunt Configuration - All settings are network-specific
 
+# Data storage configuration
+# Use 'json' for file-based storage or 'sql' for MariaDB/MySQL
+data_storage = sql
+# SQL connection settings (only used if data_storage = sql)
+sql_host = localhost
+sql_port = 3306
+sql_database = duckhunt
+sql_user = duckhunt
+sql_password = CHANGE_ME
+
 # Network configurations
 [network:example]
 server = irc.example.net/6667
@@ -603,6 +613,7 @@ shop_life_insurance = 10
 shop_liability_insurance = 5
 shop_piece_of_bread = 50
 shop_ducks_detector = 50
+shop_duck_call = 15
 shop_upgrade_magazine = 200
 shop_extra_magazine = 400
 """
@@ -745,15 +756,10 @@ shop_extra_magazine = 400
         return channel_stats['xp']
 
     def save_player_data(self):
-        """Save player data to file or SQL backend"""
-        if self.data_storage == 'sql' and self.db_backend:
-            # SQL backend - no need to save player data as it's automatically saved
-            # Active ducks and timing are handled separately
-            pass
-        else:
-            # JSON backend - save all player data
-            with open('duckhunt.data', 'w') as f:
-                json.dump(self.players, f, indent=2)
+        """Save player data to SQL backend (deprecated - kept for compatibility with existing calls)"""
+        # SQL backend handles saving automatically via update_channel_stats calls
+        # This method is kept for backwards compatibility but does nothing
+        pass
     
     def log_message(self, msg_type, message):
         """Log message with timestamp"""
@@ -1206,10 +1212,6 @@ shop_extra_magazine = 400
             network_name = network.name if network else 'unknown'
             channel_name = channel
             return self.db_backend.update_channel_stats(user, network_name, channel_name, save_stats)
-        else:
-            # JSON backend - stats are already updated in memory, just save to file
-            self.save_player_data()
-            return True
 
     def compute_accuracy(self, channel_stats, mode: str) -> float:
         """Compute hit chance based on level and temporary buffs.
@@ -1566,20 +1568,6 @@ shop_extra_magazine = 400
                     users_with_detector = self.db_backend.execute_query(
                         query, (network.name, channel, now), fetch=True
                     ) or []
-                else:
-                    # JSON backend - iterate through players
-                    users_with_detector = []
-                    channel_key = f"{network.name}:{channel}"
-                    for username, player_data in self.players.items():
-                        stats_map = player_data.get('channel_stats', {})
-                        if channel_key in stats_map:
-                            stats = stats_map[channel_key]
-                            detector_until = stats.get('ducks_detector_until', 0)
-                            if detector_until > now:
-                                users_with_detector.append({
-                                    'username': username,
-                                    'ducks_detector_until': detector_until
-                                })
                 
                 # Send notice to each user with active detector
                 for user_data in users_with_detector:
@@ -1713,7 +1701,6 @@ shop_extra_magazine = 400
                     if self.data_storage == 'sql' and self.db_backend:
                         self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                     else:
-                        self.save_player_data()
                     return
                 # No duck present - apply wild fire penalties and confiscation
                 miss_pen = -random.randint(1, 5)  # Random penalty (-1 to -5) on miss
@@ -1762,7 +1749,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 return
             
             # Target the active duck in this channel
@@ -1788,7 +1774,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 return
 
             # Shoot at duck (consume ammo on non-jam)
@@ -1843,7 +1828,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 return
 
             # Compute damage
@@ -1953,7 +1937,6 @@ shop_extra_magazine = 400
                 if not result:
                     print(f"ERROR: Database update failed for {user} in {network.name}:{channel}")
             else:
-                self.save_player_data()
         except Exception as e:
             print(f"CRITICAL ERROR in database save for {user} in {network.name}:{channel}: {e}")
             import traceback
@@ -1985,7 +1968,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 return
             
             # Get the active duck
@@ -2015,7 +1997,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 return
             
             # Accuracy-style check for befriending (duck might not notice)
@@ -2041,7 +2022,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 return
 
             # Compute befriend effectiveness
@@ -2120,7 +2100,6 @@ shop_extra_magazine = 400
                 print(f"Database save error in handle_bef for {user}: {e}")
         else:
             try:
-                self.save_player_data()
             except Exception as e:
                 print(f"Player data save error in handle_bef for {user}: {e}")
     
@@ -2167,7 +2146,6 @@ shop_extra_magazine = 400
             self.log_action(f"RELOAD SAVE DEBUG: user={user}, magazines={filtered_stats.get('magazines')}, ammo={filtered_stats.get('ammo')}")
             self.db_backend.update_channel_stats(user, network.name, channel, filtered_stats)
         else:
-            self.save_player_data()
     
     async def handle_shop(self, user, channel, args, network: NetworkConnection):
         """Handle !shop command"""
@@ -2605,7 +2583,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
                 
             except ValueError:
                 await self.send_notice(network, user, "Invalid item ID.")
@@ -2709,7 +2686,6 @@ shop_extra_magazine = 400
             self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
             self.db_backend.update_channel_stats(target, network.name, channel, self._filter_computed_stats(target_stats))
         else:
-            self.save_player_data()
     
     async def handle_999(self, user, channel, network: NetworkConnection):
         """Handle !999 command - hidden feature that gives 999 ammo"""
@@ -2727,7 +2703,6 @@ shop_extra_magazine = 400
         if self.data_storage == 'sql' and self.db_backend:
             self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
         else:
-            self.save_player_data()
         
         # Send private notice instead of channel message
         await self.send_notice(network, user, "You received 999 ammo! | Ammo: 999/999")
@@ -2850,7 +2825,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(target, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
         elif command == "disarm" and args:
             target = args[0]
             if target in self.players:
@@ -2862,7 +2836,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(target, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
     
     async def handle_owner_command_in_channel(self, user, channel, command, args, network: NetworkConnection):
         """Handle owner commands in channel context"""
@@ -2932,7 +2905,6 @@ shop_extra_magazine = 400
                 if self.data_storage == 'sql' and self.db_backend:
                     self.db_backend.update_channel_stats(target, network.name, channel, self._filter_computed_stats(channel_stats))
                 else:
-                    self.save_player_data()
         elif command == "reload":
             self.load_config("duckhunt.conf")
             # Note: This is a global command, so we can't send to a specific network
@@ -2940,7 +2912,6 @@ shop_extra_magazine = 400
         elif command == "restart":
             self.log_action(f"Restart command received from {user}")
             # Save data before restart
-            self.save_player_data()
             # Send QUIT message to all networks
             quit_msg = f"{user} requested restart."
             for net in self.networks.values():
@@ -3000,30 +2971,6 @@ shop_extra_magazine = 400
                 else:
                     self.log_action(f"Cleared {cleared_count} player stats from SQL for {network_name}:{channel_name} (no data to backup)")
                     await self.send_notice(network, user, f"Cleared all data for {channel} ({cleared_count} players affected)")
-                
-            else:
-                # JSON backend - original logic
-                channel_key = self.get_network_channel_key(network, channel)
-                norm_channel = self.normalize_channel(channel)
-                
-                for _player_name, player_data in self.players.items():
-                    stats_map = player_data.get('channel_stats', {})
-                    keys_to_delete = []
-                    
-                    # Check for new format key (network:channel)
-                    if channel_key in stats_map:
-                        keys_to_delete.append(channel_key)
-                    
-                    # Check for old format keys (just channel name, with or without trailing spaces)
-                    for key in list(stats_map.keys()):
-                        if self.normalize_channel(key) == norm_channel and key not in keys_to_delete:
-                            keys_to_delete.append(key)
-                    
-                    # Delete all matching keys
-                    if keys_to_delete:
-                        for key in keys_to_delete:
-                            del stats_map[key]
-                        cleared_count += 1
             
             # Clear ducks for this channel
             async with self.ducks_lock:
@@ -3048,7 +2995,6 @@ shop_extra_magazine = 400
                 del network.channel_last_spawn[channel]
             
             self.log_action(f"{user} cleared all data for {channel} ({cleared_count} players affected)")
-            self.save_player_data()
             await self.send_notice(network, user, f"Cleared all data for {channel} ({cleared_count} players affected)")
         elif command == "restore" and args:
             backup_id = args[0]
@@ -3572,7 +3518,6 @@ shop_extra_magazine = 400
         if self.data_storage == 'sql' and self.db_backend:
             self.db_backend.update_channel_stats(user, network.name, channel, self._filter_computed_stats(channel_stats))
         else:
-            self.save_player_data()
     
     async def handle_private_message(self, user, message, network: NetworkConnection):
         """Handle private message"""
@@ -3812,72 +3757,6 @@ shop_extra_magazine = 400
                         response_parts.append(f"{username} with {value} total xp")
                 
                 response = f"The top duck(s) in {channel} by {metric_label} are: " + " | ".join(response_parts)
-                
-            else:
-                # JSON backend - get players from memory
-                players_with_stats = []
-                for player_name, player_data in self.players.items():
-                    stats_map = player_data.get('channel_stats', {})
-                    if channel_key in stats_map:
-                        stats = stats_map[channel_key]
-                        players_with_stats.append({
-                            'name': player_name,
-                            'xp': stats.get('xp', 0),
-                            'ducks_shot': stats.get('ducks_shot', 0),
-                            'golden_ducks': stats.get('golden_ducks', 0),
-                            'befriended_ducks': stats.get('befriended_ducks', 0)
-                        })
-                
-                if not players_with_stats:
-                    await self.send_message(network, channel, "The scoreboard is empty. There are no top ducks.")
-                    return
-                
-                # Sort by ducks, XP, or XP ratio
-                if sort_by_ducks:
-                    players_with_stats.sort(key=lambda x: x['ducks_shot'] + x['befriended_ducks'], reverse=True)
-                    metric_label = "ducks"
-                elif sort_by_xp_ratio:
-                    # Calculate XP ratio and filter out players with no actions
-                    players_with_ratio = []
-                    for player in players_with_stats:
-                        total_actions = player['ducks_shot'] + player['befriended_ducks']
-                        if total_actions > 0:
-                            player['xp_ratio'] = player['xp'] / total_actions
-                            players_with_ratio.append(player)
-                    players_with_stats = players_with_ratio
-                    players_with_stats.sort(key=lambda x: x['xp_ratio'], reverse=True)
-                    metric_label = "xp ratio"
-                else:
-                    players_with_stats.sort(key=lambda x: x['xp'], reverse=True)
-                    metric_label = "total xp"
-                
-                # Build response
-                response_parts = []
-                for i, player in enumerate(players_with_stats[:10], 1):
-                    username = player['name']
-                    xp = player['xp']
-                    ducks = player['ducks_shot']
-                    golden = player['golden_ducks']
-                    befriended = player.get('befriended_ducks', 0)
-                    
-                    if sort_by_ducks:
-                        total_ducks = ducks + befriended
-                        response_parts.append(f"{username} with {total_ducks} ducks (incl. {golden} golden)")
-                    elif sort_by_xp_ratio:
-                        # Format XP ratio the same way as in duckstats
-                        xp_ratio = player['xp_ratio']
-                        if xp_ratio >= 100:
-                            ratio_str = f"{xp_ratio:.0f}"
-                        elif xp_ratio >= 10:
-                            ratio_str = f"{xp_ratio:.1f}"
-                        else:
-                            ratio_str = f"{xp_ratio:.2f}"
-                        response_parts.append(f"{username} with {ratio_str} xp ratio")
-                    else:
-                        response_parts.append(f"{username} with {xp} total xp")
-                
-                response = f"The top duck(s) in {channel} by {metric_label} are: " + " | ".join(response_parts)
-            
             await self.send_message(network, channel, response)
             
         except Exception as e:
@@ -3903,28 +3782,6 @@ shop_extra_magazine = 400
                     return
                 
                 # Apply level bonuses
-                self.apply_level_bonuses(stats)
-                
-            else:
-                # JSON backend
-                if target_user not in self.players:
-                    if target_user == user:
-                        await self.send_message(network, channel, f"{target_user}: You haven't shot any ducks yet! Wait for a duck to spawn and try !bang")
-                    else:
-                        await self.send_message(network, channel, f"{target_user} hasn't shot any ducks yet in {channel}")
-                    return
-                
-                player_data = self.players[target_user]
-                stats_map = player_data.get('channel_stats', {})
-                
-                if channel_key not in stats_map:
-                    if target_user == user:
-                        await self.send_message(network, channel, f"{target_user}: You haven't shot any ducks yet! Wait for a duck to spawn and try !bang")
-                    else:
-                        await self.send_message(network, channel, f"{target_user} hasn't shot any ducks yet in {channel}")
-                    return
-                
-                stats = stats_map[channel_key]
                 self.apply_level_bonuses(stats)
             
             # Build response
