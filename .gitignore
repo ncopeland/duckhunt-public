@@ -1,0 +1,52 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.env
+.DS_Store
+
+# Bot runtime files
+*.log
+*.out
+duckhunt.pid
+duckhunt.data
+duckhunt.data.backup
+duckhunt.conf
+duckhunt.conf.backup
+
+# Migration and debug scripts
+migrate_data.py
+setup_database.py
+quick_setup.py
+create_backup_table.py
+debug_backup.py
+setup_all.sh
+setup_no_sudo.sh
+SETUP_INSTRUCTIONS.txt
+test_*.py
+
+# Documentation (keep in repo but ignore AI instructions)
+duckhunt_ai_instructions.md
+message_classification.csv
+language_prefs.json
+
+# Sensitive files - do NOT commit to public repo
+*.conf
+*.log
+*.sh
+*_prefs.json
+tor_*.txt
+vpn_*.txt
+test_*.py
+update_*.sh
+setup_*.sh
+migrate_*.py
+quick_*.py
+cleanup_*.sh
+fix_*.sh
